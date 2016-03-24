@@ -1,0 +1,7 @@
+{
+	"dataroot": "./pub",
+	"listenAddress": "[::1]",
+	"listenPort": 8080,
+
+	"": null
+}

@@ -1,0 +1,12 @@
+#!/bin/bash
+
+set -x
+
+if [ -z $1 ]; then
+    echo 'Usage: $0 <r-package-file>' 1>&2
+    exit 1
+fi
+
+file=$1
+
+curl --form upload="@${file}" --location --no-proxy localhost:8080 -v http://localhost:8080/api/upload
