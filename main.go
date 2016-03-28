@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"html/template"
 	"io"
 	"io/ioutil"
 	"log"
@@ -19,8 +21,14 @@ type config struct {
 	ListenAddr string `json:"listenAddress"`
 	ListenPort int    `json:"listenPort"`
 	DataRoot   string `json:"dataroot"`
+	PkgScript  string `json:"pkgScript"`
+}
+
+type RInput struct {
+	TargetRepo string `json:"targetRepo"`
 
 	m sync.Mutex // to protect the shelling out from having races
+	s string
 }
 
 var (
@@ -52,6 +60,7 @@ func main() {
 
 	debug.Printf("Listening on http://%s", addr)
 
+	http.HandleFunc("/", c.index)
 	http.HandleFunc("/api/upload", c.upload)
 	http.ListenAndServe(addr, nil)
 }
@@ -79,6 +88,11 @@ func loadAndInitialize(f string) (*config, error) {
 	return &c, err
 }
 
+func (c config) index(w http.ResponseWriter, r *http.Request) {
+	t, _ := template.ParseFiles("templates/upload.html")
+	t.Execute(w, nil)
+}
+
 func (c config) upload(w http.ResponseWriter, r *http.Request) {
 	log.Printf("Received a %q reqeust", r.Method)
 	switch {
@@ -97,7 +111,8 @@ func (c config) upload(w http.ResponseWriter, r *http.Request) {
 		}
 		newName := path.Join(c.DataRoot, header.Filename)
 		log.Printf("newName: %q", newName)
-		wr, err := os.OpenFile(newName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		// wr, err := os.OpenFile(newName, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0644)
+		wr, err := os.OpenFile(newName, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0644)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -107,11 +122,17 @@ func (c config) upload(w http.ResponseWriter, r *http.Request) {
 			log.Printf("err(os.Rename): %q", err)
 		}
 		wr.Close()
-		err = c.writePackages()
+		ri := RInput{
+			TargetRepo: c.DataRoot,
+			s:          c.PkgScript,
+		}
+		err = ri.writePackages()
 		if err != nil {
 			log.Printf("err(c.writePackages): %q", err)
 		}
-		fmt.Fprintln(w, "OK i have written the file!")
+		// fmt.Fprintln(w, "OK i have written the file!")
+
+		http.Redirect(w, r, "/", http.StatusFound)
 
 	default:
 		http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
@@ -120,18 +141,28 @@ func (c config) upload(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (c config) writePackages() error {
-	c.m.Lock()
-	defer c.m.Unlock()
-	cmd := exec.Command(
-		"R",
-		"-e",
-		fmt.Sprintf(`'tools::write_PACKAGES(dir="%s", subdirs = TRUE, latestOnly = FALSE, addFiles = TRUE, verbose = TRUE)'`, c.DataRoot),
-	)
-	debug.Printf("cmd.Args: %q", cmd.Args)
-	err := cmd.Run()
+func (r RInput) writePackages() error {
+	r.m.Lock()
+	defer r.m.Unlock()
+	cmd := exec.Command(r.s)
+
+	cmdInput, err := json.Marshal(r)
+	if err != nil {
+		debug.Fatalf("err(json.Marshal): %q", err)
+	}
+
+	cmd.Stdin = bytes.NewReader(cmdInput)
+
+	var stdOut bytes.Buffer
+	cmd.Stdout = &stdOut
+
+	var stdErr bytes.Buffer
+	cmd.Stderr = &stdErr
+	err = cmd.Run()
 	if err != nil {
 		debug.Printf("err(cmd.Output): %q", err)
+		debug.Printf("stdOut: %q", cmd.Stdout)
+		debug.Printf("stdErr: %q", cmd.Stderr)
 	}
 	return err
 }

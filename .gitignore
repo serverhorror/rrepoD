@@ -25,3 +25,10 @@ _testmain.go
 
 # local test
 config.json
+PACKAGES
+PACKAGES.gz
+
+# get this from here:
+# https://cran.r-project.org/src/contrib/ or here
+# https://cran.r-project.org/src/contrib/PACKAGES
+input-packages

@@ -2,6 +2,7 @@
 	"dataroot": "./pub",
 	"listenAddress": "[::1]",
 	"listenPort": 8080,
+	"pkgScript": "./scripts/tools-write_PACKAGES.R",
 
 	"": null
 }
